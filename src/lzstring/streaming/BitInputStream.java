@@ -1,43 +1,46 @@
 package lzstring.streaming;
+
 import java.io.IOException;
 import java.io.InputStream;
 
 public class BitInputStream {
 
-	InputStream is;
+    private InputStream is;
 
-	private int pos = 128;
-	private byte thisByte = 0;
+    private int pos = 128;
+    private byte thisByte = 0;
 
-	public BitInputStream(InputStream is) throws IOException {
-		this.is = is;
-		thisByte = (byte) is.read();
-	}
+    public BitInputStream(InputStream is) throws IOException {
 
-	public void close() throws IOException{
+        this.is = is;
+        thisByte = (byte) is.read();
+    }
 
-		is.close();
-	}
+    public void close() throws IOException{
 
-	public int readBits(int numBits) throws IOException {
+        is.close();
+    }
 
-		int returnVal = 0;
+    public int readBits(int numBits) throws IOException {
 
-		if(numBits > 16)
-			numBits = 16;
+        int returnVal = 0;
 
-		for(int i = 0; i < numBits; i++){
+        if(numBits > 16)
+            numBits = 16;
 
-			returnVal |= (1 << i) * (((thisByte & pos) == 0)? 0 : 1);
+        for(int i = 0; i < numBits; i++){
 
-			pos >>= 1;
+            returnVal |= (1 << i) * (((thisByte & pos) == 0)? 0 : 1);
 
-			if(pos == 0){
-				thisByte = (byte) is.read();
-				pos = 128;
-			}
-		}
+            pos >>= 1;
 
-		return returnVal;
-	}
+            if(pos == 0){
+
+                thisByte = (byte) is.read();
+                pos = 128;
+            }
+        }
+
+        return returnVal;
+    }
 }

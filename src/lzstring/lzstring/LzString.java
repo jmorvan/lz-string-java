@@ -5,196 +5,209 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import lzstring.datatypes.Context;
 import lzstring.exceptions.DecompressException;
 import lzstring.streaming.BitInputStream;
 import lzstring.streaming.BitOutputStream;
 
 public class LzString {
 
-	public static String decompress(String compressed) throws DecompressException {
+    private static class Context {
 
-		String output = null;
+        protected Map<String, Integer> dictionary = new HashMap<String, Integer>();
+        protected Set<String> dictionaryToCreate = new HashSet<String>();
 
-		try {
-			output =  decompress(new ByteArrayInputStream(compressed.getBytes()));
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+        protected String wc = "", w = "";
 
-		return output;
-	}
+        protected BitOutputStream data = new BitOutputStream();
 
-	public static String decompress(InputStream compressed) throws IOException, DecompressException {
+        protected int enlargeIn = 2, numBits = 2;
+    }
 
-		BitInputStream bis = new BitInputStream(compressed);
+    public static String decompress(String compressed) throws DecompressException {
 
-		Map<Integer, String> dict = new HashMap<Integer, String>();
+        String output = null;
 
-		int next, enlargeIn = 4, dictSize = 4, numBits = 3, errorCount = 0;
-		int c;
+        try {
+            output =  decompress(new ByteArrayInputStream(compressed.getBytes()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-		String entry = ""; String w = "";
+        return output;
+    }
 
-		StringBuffer result = new StringBuffer();
+    public static String decompress(InputStream compressed) throws IOException, DecompressException {
 
-		for(int i = 0; i < 3; i++)
-			dict.put(i, null);
+        BitInputStream bis = new BitInputStream(compressed);
 
-		next = bis.readBits(2);
+        Map<Integer, String> dict = new HashMap<Integer, String>();
 
-		if(next == 0 || next == 1)
-			c = bis.readBits((next + 1) * 8);
-		else
-			return "";
+        int next, enlargeIn = 4, dictSize = 4, numBits = 3, errorCount = 0;
+        int c;
 
-		dict.put(3, Character.toString((char)c));
+        String entry = ""; String w = "";
 
-		w = Character.toString((char) c);
-		result.append(w);
+        StringBuffer result = new StringBuffer();
 
-		while(true){
+        for(int i = 0; i < 3; i++)
+            dict.put(i, null);
 
-			c = bis.readBits(numBits);
+        next = bis.readBits(2);
 
-			if(c == 0 || c == 1){
+        if(next == 0 || next == 1)
+            c = bis.readBits((next + 1) * 8);
+        else
+            return "";
 
-				if(errorCount++ > 10000)
-					throw new DecompressException("This is not a compressed string.");
+        dict.put(3, Character.toString((char)c));
 
-				c = bis.readBits((c + 1) * 8);
-				dict.put(dictSize++, Character.toString((char) c));
-				c = dictSize - 1;
-				enlargeIn--;
-			}
-			else if(c == 2)
-				return result.toString();
+        w = Character.toString((char) c);
+        result.append(w);
 
-			if(enlargeIn == 0)
-				enlargeIn = 1 << numBits++;
+        while(true){
 
-			if(dict.get(c) != null)
-				entry = dict.get(c);
-			else {
-				if(c == dictSize)
-					entry = w + w.charAt(0);
-				else
-					return null;
-			}
+            c = bis.readBits(numBits);
 
-			result.append(entry);
+            if(c == 0 || c == 1){
 
-			dict.put(dictSize++, w + entry.charAt(0));
-			enlargeIn--;
+                if(errorCount++ > 10000)
+                    throw new DecompressException("This is not a compressed string.");
 
-			w = entry;
+                c = bis.readBits((c + 1) * 8);
+                dict.put(dictSize++, Character.toString((char) c));
+                c = dictSize - 1;
+                enlargeIn--;
+            }
+            else if(c == 2)
+                return result.toString();
 
-			if(enlargeIn == 0)
-				enlargeIn = 1 << numBits++;
-		}
-	}
+            if(enlargeIn == 0)
+                enlargeIn = 1 << numBits++;
 
-	private static void produceW(Context context) throws IOException {
+            if(dict.get(c) != null)
+                entry = dict.get(c);
+            else {
+                if(c == dictSize)
+                    entry = w + w.charAt(0);
+                else
+                    return null;
+            }
 
-		Map<String, Integer> dict = context.getDictionary();
-		Set<String> cDict = context.getDictionaryToCreate();
+            result.append(entry);
 
-		String w = context.getW();
-		BitOutputStream bos = context.getData();
+            dict.put(dictSize++, w + entry.charAt(0));
+            enlargeIn--;
 
-		int numBits = context.getNumBits();
-		int enlargeIn = context.getEnlargeIn();
+            w = entry;
 
-		if(cDict.contains(w)){
+            if(enlargeIn == 0)
+                enlargeIn = 1 << numBits++;
+        }
+    }
 
-			int charCode = Character.codePointAt(w, 0);
-			boolean notUnicode = charCode < 256;
+    private static void produceW(Context context) throws IOException {
 
-			bos.writeBits(numBits, notUnicode? 0 : 1);
-			bos.writeBits(notUnicode? 8 : 16, charCode);
+        Map<String, Integer> dict = context.dictionary;
+        Set<String> cDict = context.dictionaryToCreate;
 
-			enlargeIn = (--enlargeIn == 0)? 1 << numBits++ : enlargeIn;
+        String w = context.w;
+        BitOutputStream bos = context.data;
 
-			cDict.remove(w);
-		}
-		else {
+        int numBits = context.numBits;
+        int enlargeIn = context.enlargeIn;
 
-			bos.writeBits(numBits, dict.get(w));
-		}
+        if(cDict.contains(w)){
 
-		enlargeIn = (--enlargeIn == 0)? 1 << numBits++ : enlargeIn;
+            int charCode = Character.codePointAt(w, 0);
+            boolean notUnicode = charCode < 256;
 
-		context.setEnlargeIn(enlargeIn);
-		context.setNumBits(numBits);
-	}
+            bos.writeBits(numBits, notUnicode? 0 : 1);
+            bos.writeBits(notUnicode? 8 : 16, charCode);
 
-	public static byte[] compress(String uncompressed) {
+            enlargeIn = (--enlargeIn == 0)? 1 << numBits++ : enlargeIn;
 
-		byte[] output = null;
+            cDict.remove(w);
+        }
+        else {
 
-		try {
-			output =  compress(new ByteArrayInputStream(uncompressed.getBytes()));
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+            bos.writeBits(numBits, dict.get(w));
+        }
 
-		return output;
-	}
+        enlargeIn = (--enlargeIn == 0)? 1 << numBits++ : enlargeIn;
 
-	public static byte[] compress(InputStream uncompressed) throws IOException {
+        context.enlargeIn = enlargeIn;
+        context.numBits = numBits;
+    }
 
-		Context context = new Context();
-		int c;
+    public static byte[] compress(String uncompressed) {
 
-		Map<String, Integer> dict = context.getDictionary();
+        byte[] output = null;
 
-		// Create a character stream from the binary input stream.
-		InputStreamReader isr = new InputStreamReader(uncompressed);
+        try {
+            output =  compress(new ByteArrayInputStream(uncompressed.getBytes()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-		while((c = isr.read()) != -1){
+        return output;
+    }
 
-			String nextCharacter = Character.toString((char) c);
+    public static byte[] compress(InputStream uncompressed) throws IOException {
 
-			if(!context.getDictionary().containsKey(nextCharacter)){
+        LzString.Context context = new LzString.Context();
 
-				dict.put(nextCharacter, 3 + dict.size());
+        int c;
 
-				context.getDictionaryToCreate().add(nextCharacter);
-			}
+        Map<String, Integer> dict = context.dictionary;
 
-			context.setWc(context.getW() + nextCharacter);
+        // Create a character stream from the binary input stream.
+        InputStreamReader isr = new InputStreamReader(uncompressed);
 
-			if(context.getDictionary().containsKey(context.getWc()))
-				context.setW(context.getWc());
-			else {
+        while((c = isr.read()) != -1){
 
-				produceW(context);
+            String nextCharacter = Character.toString((char) c);
 
-				dict.put(context.getWc(), 3 + dict.size());
-				context.setW(nextCharacter);
-			}
-		}
+            if(!context.dictionary.containsKey(nextCharacter)){
 
-		if(!context.getW().equals(""))
-			produceW(context);
+                dict.put(nextCharacter, 3 + dict.size());
 
-		context.getData().writeBits(context.getNumBits(), 2);
-		uncompressed.close();
+                context.dictionaryToCreate.add(nextCharacter);
+            }
 
-		return context.getData().getContent();
-	}
+            context.wc = context.w + nextCharacter;
 
-	public static void main(String args[]) throws Exception{
+            if(context.dictionary.containsKey(context.wc))
+                context.w = context.wc;
+            else {
 
-		String test = "Lets see how much we can compress this string!";
-		
-		byte[] output = LzString.compress(test);
+                produceW(context);
 
-		System.out.println("Original: " + test);
-		System.out.println("Compressed: " + new String(output, "UTF-16"));
-		System.out.println("Decompressed: " + LzString.decompress(new ByteArrayInputStream(output)));
-	}
+                dict.put(context.wc, 3 + dict.size());
+                context.w = nextCharacter;
+            }
+        }
+
+        if(!context.w.equals(""))
+            produceW(context);
+
+        context.data.writeBits(context.numBits, 2);
+        uncompressed.close();
+
+        return context.data.getContent();
+    }
+
+    public static void main(String args[]) throws Exception{
+
+        String test = "Let's see how much we can compress this string!";
+
+        byte[] output = LzString.compress(test);
+
+        System.out.println("Original: " + test);
+        System.out.println("Compressed: " + new String(output, "UTF-16"));
+        System.out.println("Decompressed: " + LzString.decompress(new ByteArrayInputStream(output)));
+    }
 }
